@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Taxi Fare – Bugset (3 lỗi theo yêu cầu)</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:760px;margin:32px auto;padding:0 16px;line-height:1.5}
+    h1{font-size:24px;margin-bottom:8px}
+    p.note{background:#fff8e1;border:1px dashed #f0b429;padding:12px;border-radius:8px}
+    label{display:block;margin:10px 0 6px}
+    input[type="text"]{width:100%;padding:10px;border:1px solid #ccc;border-radius:8px}
+    .actions{display:flex;gap:12px;margin-top:12px}
+    button{padding:10px 16px;border-radius:8px;border:1px solid #333;background:#111;color:#fff;cursor:pointer}
+    button.secondary{background:#fff;color:#111}
+    .out{margin-top:16px;padding:16px;border-radius:8px;border:1px solid #ddd;background:#f9fafb;min-height:40px;white-space:pre-wrap;font-size:18px;font-weight:700}
+    .error{color:#b00020}
+    ul{margin:6px 0 0 16px}
+    .sub{font-size:14px;font-weight:500;color:#333;margin-top:6px}
+  </style>
+</head>
+<body>
+  <h1>Taxi Fare</h1>
+  <p class="note">
+    <strong>Quy tắc mong muốn:</strong>
+    <ul>
+      <li><strong>0–&lt;5 km</strong> → <strong>0%</strong></li>
+      <li><strong>5–10 km</strong> (bao gồm 5 và 10) → <strong>5%</strong></li>
+      <li><strong>&gt;10–15 km</strong> (bao gồm 15) → <strong>7%</strong></li>
+      <li><strong>&gt;15–20 km</strong> (bao gồm 20) → <strong>10%</strong></li>
+      <li><strong>&gt;20 km</strong> → <strong>15%</strong></li>
+    </ul>
+    Thành viên: giảm thêm <strong>5%</strong> (áp sau khi giảm theo km). Đơn giá cố định: <strong>10,000 VND/km</strong>. Hỗ trợ thập phân (chấm hoặc phẩy).
+    <hr/>
+    </ol>
+  </p>
+
+  <label for="km">Số km</label>
+  <input id="km" type="text" placeholder="Ví dụ: 10, 12, 25"/>
+
+  <label style="margin-top:8px">
+    <input id="member" type="checkbox"/> Tôi là thành viên (giảm 5%)
+  </label>
+
+  <div class="actions">
+    <button id="calc">Tính tiền</button>
+    <button id="clear" class="secondary">Xóa</button>
+  </div>
+
+  <div id="out" class="out"></div>
+
+  <script>
+    const RATE = 10000; // 10k VND/km
+
+    function formatVND(n){
+      const v = Math.round(n);
+      return v.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " VND";
+    }
+
+    function parseKM(raw){
+      if(typeof raw !== "string") return NaN;
+      const norm = raw.trim().replace(",", ".");
+      return parseFloat(norm);
+    }
+
+    // --- BUG #1 & #2 intentionally inserted here ---
+    function getDistanceDiscount_BUGGY(km){
+      // Lỗi biên: 10 km không thuộc khoảng nào
+      // Sai % cho >20 km: trả 12% thay vì 15%
+      if(km >= 5 && km < 10) return 0.05;
+      if(km > 10 && km <= 15) return 0.07;
+      if(km > 15 && km <= 20) return 0.10;
+      if(km > 20) return 0.12; // BUG: 12% (đáng lẽ 15%)
+      return 0;
+    }
+
+    function calcFare(){
+      const out = document.getElementById('out');
+      out.classList.remove('error');
+      let km = parseKM(document.getElementById('km').value);
+      const isMember = document.getElementById('member').checked;
+
+      // Validation cơ bản
+      if(isNaN(km) || !isFinite(km)){
+        out.textContent = "Lỗi: Vui lòng nhập số km hợp lệ.";
+        out.classList.add('error');
+        return;
+      }
+      if(km < 0){
+        out.textContent = "Lỗi: Số km không được âm.";
+        out.classList.add('error');
+        return;
+      }
+      if(km > 1e6){
+        out.textContent = "Lỗi: Số km quá lớn (không hợp lệ).";
+        out.classList.add('error');
+        return;
+      }
+
+      const base = km * RATE;
+
+      // --- BUG #3 intentionally: giảm theo phần vượt 5km ---
+      const dRate = getDistanceDiscount_BUGGY(km);
+      const discountableKm = Math.max(0, km - 5); // BUG: chỉ phần vượt 5 km
+      const distanceCut = dRate * (discountableKm * RATE);
+      const afterDistance = base - distanceCut;
+
+      // Thành viên: giảm đúng 5% áp sau khi giảm theo km (giữ đúng yêu cầu)
+      const memberRate = isMember ? 0.05 : 0;
+      const afterMember = afterDistance * (1 - memberRate);
+
+      // Tổng % giảm hiệu dụng so với base (để bạn nhìn thấy buggy behavior rõ ràng)
+      const effectiveDiscount = 1 - afterMember / base;
+      const total = Math.max(0, afterMember);
+
+      out.innerHTML = "TỔNG: " + formatVND(total) +
+                      "<div class='sub'>(Tổng % giảm: " + (effectiveDiscount * 100).toFixed(2) + "%)</div>";
+    }
+
+    function clearForm(){
+      document.getElementById('km').value = "";
+      document.getElementById('member').checked = false;
+      const out = document.getElementById('out');
+      out.textContent = "";
+      out.classList.remove('error');
+    }
+
+    document.getElementById('calc').addEventListener('click', calcFare);
+    document.getElementById('clear').addEventListener('click', clearForm);
+  </script>
+</body>
+</html>
